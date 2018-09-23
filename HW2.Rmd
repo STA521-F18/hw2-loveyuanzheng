@@ -1,6 +1,6 @@
 ---
 title: "HW2 STA521 Fall18"
-author: '[Your Name Here, netid and github username here]'
+author: 'Zheng Yuan zy87 github loveyuanzheng'
 date: "Due September 23, 2018 5pm"
 output:
   pdf_document: default
@@ -24,7 +24,7 @@ This exercise involves the UN data set from `alr3` package. Install `alr3` and t
 
 0.  Preliminary read in the data.  After testing, modify the code chunk so that output, messages and warnings are suppressed.  *Exclude text from final*
 
-```{r data}
+```{r data,results="hide",message=FALSE,warning=FALSE}
 library(alr3)
 data(UN3, package="alr3")
 help(UN3) 
@@ -34,91 +34,214 @@ library(car)
 
 1. Create a summary of the data.  How many variables have missing data?  Which are quantitative and which are qualtitative?
 
-```{r}
-
+```{r,results="hide"}
+summary(UN3)
+is.na(UN3)
+sapply(UN3,class)
 ```
+The result implies that there are 6 variables have missing data. All of the variables are quantitative.
 
-2. What is the mean and standard deviation of each quantitative predictor?  Provide in a nicely formatted table.
-
+2. What is the mean and standard deviation of each quantitative predictor?  Provide in a nicely formatted table.\newline
+  Here, in order to be simple and clear, mean and standard deviation are rounded to two significant digits.
 ```{r}
-
+library(knitr)
+MeanSD<-sapply(UN3, function(x){signif(c(mean(x,na.rm=TRUE), sd(x,na.rm=TRUE)),2)})
+rownames(MeanSD)<-c("mean","standard deviation")
+kable(MeanSD,row.names = TRUE)
 ```
 
 
 3. Investigate the predictors graphically, using scatterplots or other tools of your choice. Create some plots
 highlighting the relationships among the predictors. Comment
-on your findings regarding trying to predict `ModernC` from the other variables.  Are there potential outliers, nonlinear relationships or transformations that appear to be needed based on your graphical EDA?
-
+on your findings regarding trying to predict `ModernC` from the other variables.  Are there potential outliers, nonlinear relationships or transformations that appear to be needed based on your graphical EDA?\newline
+First, we create a scatterolots of the predictors.
 ```{r}
-
+library(dplyr)
+pairs(~ModernC+Change+PPgdp+Frate+Pop+Fertility+Purban,data=UN3, 
+   main="UN3 Scatterplot Matrix",na.action = "na.omit")
 ```
+\newline The scatterplot matrix above implies that there exists an exponential relationship between PPgdp and ModernC as well as Fertility and ModernC because the plots of them appear to be  exponential shape. Therefore, transfering PPgdp and Fertility into log(PPgdp) and log(Fertility) appear to be needed in this case. Besides, there seems to be no linear relationship between ModernC, Frate and Pop.
+```{r}
+library(dplyr)
+UN = dplyr::select(UN3, c(ModernC,Fertility, PPgdp)) %>%
+  mutate(logPPgdp = log(PPgdp),
+         logFertility = log(Fertility)) %>%
+  na.omit()
+library(GGally)
+ggpairs(UN, c(1,4,5))
+```
+The plot above shows that after transfering PPgdp and Fertility into log(PPgdp) and log(Fertility) respectively, there appears to be a linear relationship bewtween ModernC and log(PPgdp) as well as log(Fertility).
+
 
 ## Model Fitting
 
 4.  Use the `lm()` function to perform a multiple linear regression with `ModernC` as the response and all other variables as the predictors, using the formula `ModernC ~ .`, where the `.` includes all remaining variables in the dataframe.  Create  diagnostic residual plot from the linear model object and comment on results regarding assumptions.  How many observations are used in your model fitting?
 
 ```{r}
+UN1<-UN3%>%
+  na.omit()
+fit1<-lm(ModernC~.,data=UN1)
+summary(fit1)
+par(mfrow=c(2,2))
+plot(fit1, ask=F)
 
 ```
-
+First, there exists a linear relationship residuals and fitted values, which means that our linear model fits the data.\newline
+Next, in the second plot, standardized residuals are lined well on the straight dashed line despite some outliers, this implies that the residuals are normally distributed.\newline
+Then, the scale-location plot shows that residuals are not spread equally along the ranges of predictors, the residuals begin to spread wider along the x-axis before it passes 50.\newline
+Lastly, since there are not any points outside the dashed line, Cook Distance, there are no influential points in this case.\newline
+By the way, 125 observations are used in my model fitting.\newline
 5. Examine added variable plots `car::avPlot` or `car::avPlots`  for your model above. Are there any plots that suggest that transformations are needed for any of the terms in the model? Describe. Is it likely that any of the localities are influential for any of the terms?  Which localities?  Which terms?  
 
 ```{r}
-
+car::avPlots(fit1)
 ```
-
+The plots above imply that Kuwaito, Poland and Azerbajian are influential for "Change"; Poland and Azerbajian are influential for "PPgdp","Frate","Fertility" and "Purban"; "Azerbajian" is also influential for Pop.\newline
 6.  Using the Box-Tidwell  `car::boxTidwell` or graphical methods find appropriate transformations of the predictor variables to be used as predictors in the linear model.  If any predictors are negative, you may need to transform so that they are non-negative.  Describe your method and  the resulting transformations.
 
 
 ```{r}
-
+boxTidwell(ModernC~PPgdp+Pop+Fertility,~Change^2+Purban+Frate,data=UN1)
 ```
-
+First, from the scatterplot matrix, I realise that the predictors which potentially need transformation are PPgdp, Pop and Fertility. Besides,since predictor Change has some negative values, I'd better transform it into its squared. Therefore, I use the boxTidewell function as above. According to the result, the MLE of lambda for PPgdp and Pop is nearly 0, which means we should transfer PPgdp into log(PPgdp) and tranfer Pop into log(Pop).\newline
 7. Given the selected transformations of the predictors, select a transformation of the response using `MASS::boxcox` or `car::boxCox` and justify.
 
 
 ```{r}
-
+fit2<-lm(ModernC~log(PPgdp)+log(Pop)+Fertility+Change^2+Purban+Frate,data=UN1)
+boxCox(fit2, plotit=TRUE)
+summary(fit2)
 ```
+The plot show that the optimal $\lambda$ here is about 0.8, so the according transformation will be $\frac{ModernC^{0.8}-1}{0.8}$ Then we will justify it.
+```{r}
+
+fit3<-lm(((ModernC^(0.8)-1)/0.8)~log(PPgdp)+log(Pop)+Fertility+Change+Purban+Frate,data=UN1)
+summary(fit3)
+```
+Compared to the original model, the adjusted R-squared value does not change too much.\newline
 
 8.  Fit the regression using the transformed variables.  Provide residual plots and added variables plots and comment.  If you feel that you need additional transformations of either the response or predictors, repeat any steps until you feel satisfied.
+```{r}
+fit3<-lm(((ModernC^(0.8)-1)/0.8)~log(PPgdp)+log(Pop)+Fertility+Change^2+Purban+Frate,data=UN1)
+par(mfrow=c(2,2))
+plot(fit3, ask=F)
 
+```
+First, there exists a linear relationship residuals and fitted values, which means that our linear model fits the data.\newline
+Next, in the second plot, standardized residuals are lined well on the straight dashed line despite some outliers, this implies that the residuals are normally distributed.\newline
+Then, in the third plot, the points are now randomly distributed on both sides of a nearly horizonal line, better than before, which implies that residuals are spread equally along the ranges of predictors. \newline
 9. Start by finding the best transformation of the response and then find transformations of the predictors.  Do you end up with a different model than in 8?
 
 
 ```{r}
+fit4<-lm(ModernC~PPgdp+Pop+Fertility+Change+Purban+Frate,data=UN1)
+boxCox(fit4, plotit=TRUE)##First, we look for the bset transformation of the responseby boxcox
+```
+The plot shows that the optimal $\lambda$ for response is still about 0.8.\newline
+Then we start to look for the transformations of the predictors.\newline
+```{r}
+library(dplyr)
+UN2=mutate(UN1,ModernC1=(ModernC^(0.8)-1)/0.8)#Transform the response at first
+pairs(~ModernC1+Change+PPgdp+Frate+Pop+Fertility+Purban,data=UN2, 
+   main="UN2 Scatterplot Matrix")##Plot the scatterplot matrix
+
 
 ```
-
+\newline In fact, the shape of scatterplot has nothing different from that of original dataset.Therefore, I use the same form of boxTidewell function.
+```{r}
+boxTidwell(ModernC1~PPgdp+Pop+Fertility,~Change^2+Purban+Frate,data=UN2)
+```
+The result shows that we end up with a same model compared with Problem 8.\newline
 10.  Are there any outliers or influential points in the data?  Explain.  If so, refit the model after removing any outliers and comment on residual plots.
 
-
+First thing to do is to detect outliers and influential points using "outlierTest" function in car package.
 ```{r}
-
+library(car)
+outlierTest(fit3)
 ```
-
+The result shows that we'd better remove "Poland" from our dataset because it's the most extreme outliers. Besides, as we detect above, Azerbaijan is also an outlier, we'd better remove it too.
+```{r}
+UN4 <- subset(UN1,!UN1$Pop%in%c(38588,8370))
+```
+Then we refit our model with new dataset.
+```{r}
+fit5<-lm(((ModernC^(0.8)-1)/0.8)~log(PPgdp)+log(Pop)+Fertility+Change+Purban+Frate,data=UN4)
+par(mfrow=c(2,2))
+plot(fit5,ask=F)
+```
+\newline As we can see in the Fitted values vs Residuals plots, points in it seems to be closer to zero line than before, which means our new model fits better after we delete the outliers.
 ## Summary of Results
 
 11. For your final model, provide summaries of coefficients with 95% confidence intervals in a nice table with interpretations of each coefficient.  These should be in terms of the original units! 
 
 
 ```{r}
-
+library(knitr)
+coe<-confint(fit5)
+kable(coe,row.names =TRUE,digits=2,caption="Coefficients with 95% confidence intervals")
 ```
 
 
-12. Provide a paragraph summarizing your final model  and findings suitable for the US envoy to the UN after adjusting for outliers or influential points.   You should provide a justification for any case deletions in your final model
+##
+Interpretation:
+\newline To interpret this, first let ModernC1=$\frac{ModernC^{0.8}-1}{0.8}$ and ModernC'=$exp(ModernC1)$, so when PPgdp=Pop=1 and other predictors are all 0, ModernC1 would be in $e^{-1.84}$ to $e^{24.73}$ with a probablity of 0.95; 10% increase in PPgdp would cause $1.1^{1.11}-1$ to $1.1^{3.67}-1$ increase in ModernC';10% increase in Pop would cause $1.1^{0.09}-1$ to $1.1^{1.23}-1$ increase in ModernC'; 1 unit increase in Fertility would cause $1-e^{-7.09}$ to$1-e^{-3.87}$ decrease in ModernC'; 1 unit increase in Change would cause $e^{0.67}-1$ to $e^{4.43}-1$ increase in ModernC'; 1 unit increase in Purban would cause $1-e^{-0.13}$ decrease to $e^{0.04}-1$ increase in ModernC';1 unit increase in Frate would cause up to $e^{0.04}-1$ increase in ModernC'.
 
+12. Provide a paragraph summarizing your final model  and findings suitable for the US envoy to the UN after adjusting for outliers or influential points.   You should provide a justification for any case deletions in your final model\newline
+ 
+   First, in the original dataset, almost every variable has missing values, therefore, we would omit those observations with missing values. Then, after plotting and analysis, we find that "Poland" and "Azerbeijan" are extreme outliers and may influence the model very much so they are also removed from the dataset.
+ After some anaysis, we make some transformations to some predictors as well as response, and then obtain the final model, that is,
+ $$\frac{ModernC^{0.8}-1}{0.8}=11.45+2.39*log(PPgdp)+0.66*log(Pop)-5.48*Fertility+2.55*Change-0.05*Purban-0.07*Frate$$
+ \newline The interpretation of each coefficient is in the Problem 11. The summary of the model shows that ModernC has strong relationship with log(PPgdp), log(Pop), Fertility and Change, so these variables are the important factors that decide the percent of unmarried women while Purban and Frate are not.
 
-```{r}
-
-```
 
 
 ## Methodology
 
     
-13. Prove that the intercept in the added variable scatter plot will always be zero.  _Hint:  use the fact that if $H$ is the project matrix which contains a column of ones, then $1_n^T (I - H) = 0$.  Use this to show that the sample mean of residuals will always be zero if there is an intercept._
+13. Prove that the intercept in the added variable scatter plot will always be zero.  _Hint:  use the fact that if $H$ is the project matrix which contains a column of ones, then $1_n^T (I - H) = 0$.  Use this to show that the sample mean of residuals will always be zero if there is an intercept.\newline
+Proof:\newline
+First, let the residual from regressing Y on all the predictors except for $X_j$ be $e_{(y)}$ and the residual from regressing $X_j$ on all the predictors be $e_{(X_{j})}$
+Then our regression model would be
+$$
+\begin{aligned}
+e_{(y)}&=\hat{\beta_0}+\hat\beta_{1}e_{(X_{j})}\\
+(I-H)Y&=\hat{\beta_0}+\hat\beta_{1}(I-H)X_{ j}\\
+(I-H)Y&=\hat{\beta_0}1_{n}+[X_{j}^T(I-H)(I-H)X_j]^{-1}((I-H)X_j)^T(I-H)Y(I-H)X_{j}\\
+(I-H)Y&=\hat{\beta_0}1_{n}+(X_{j}^T(I-H)X_j)^{-1}X_j^{T}(I-H)Y(I-H)X_{j}\\
+X_{j}^T(I-H)Y&=X_{j}^T\hat{\beta_0}1_{n}+X_{j}^T(X_{j}^T(I-H)X_j)^{-1}X_j^{T}(I-H)Y(I-H)X_{j}\\
+X_{j}^T(I-H)Y&=X_{j}^T1_{n}\hat{\beta_0}+X_{j}^T(I-H)X_{j}(X_{j}^T(I-H)X_j)^{-1}X_j^{T}(I-H)Y\\
+X_{j}^T(I-H)Y&=X_{j}^T1_{n}\hat{\beta_0}+X_{j}^T(I-H)Y\\
+X_{j}^T1_{n}\hat{\beta_0}&=0\\
+\sum_{i=1}^nX_{j}^{(i)}\hat\beta_{0}&=0\\
+\hat\beta_{0}&=0
+\end{aligned}
+$$
+Next we prove that the sample mean of residuals will always be zero if there is an intercept, note that $\sum e$ can be written as $1_{n}^Te$ which equals $1_{n}^T(I-H)Y$. Since intercept is included here by assumption, $(I-H)$ is the project matrix which contains a column of ones, then $1_n^T (I - H) = 0$. It follows that $1_{n}^Te=1_{n}^T(I-H)Y=0$ Therefore, the sample will always be zero.
+
+14. For multiple regression with more than 2 predictors, say a full model given by `Y ~ X1 + X2 + ... Xp`   we create the added variable plot for variable `j` by regressing `Y` on all of the `X`'s except `Xj` to form `e_Y` and then regressing `Xj` on all of the other X's to form `e_X`.  Confirm that the slope in a manually constructed added variable plot for one of the predictors  in Ex. 10 is the same as the estimate from your model. \newline
+First, let us recall the model we fit in Ex.10.
+```{r,results="hide"}
+summary(fit5)
+```
+The final model is
+$$\frac{ModernC^{0.8}-1}{0.8}=11.45+2.39*log(PPgdp)+0.66*log(Pop)-5.48*Fertility+2.55*Change-0.05*Purban-0.07*Frate$$
+Here let us take the predictor Fertility for an example, the estimate for the slope of it in our full model is -5.48. Then let us construct the added variable model in two steps.
+
+First, let us make regression of $\frac{ModernC^{0.8}-1}{0.8}$ on all of the predictors except for Fertility and then we extract the residual.
+```{r}
+fit6<-lm(((ModernC^(0.8)-1)/0.8)~log(PPgdp)+log(Pop)+Change+Purban+Frate,data=UN4)
+res1<-residuals(fit6)
+```
+Then we make regression of Fertility on the other predictors and also extract the residual.
+```{r}
+fit7<-lm(Fertility~log(PPgdp)+log(Pop)+Change+Purban+Frate,data=UN4)
+res2<-residuals(fit7)
+```
+Finally we make regression of res1 on res2 and see its coefficients
+```{r,results="hide"}
+fit8<-lm(res1~res2)
+summary(fit8)
+```
+According to the rusult, the slope of our manually constructed added variable plot for predictor Fertility is -5.48, which is the same as the estimate from our model. 
 
 
-14. For multiple regression with more than 2 predictors, say a full model given by `Y ~ X1 + X2 + ... Xp`   we create the added variable plot for variable `j` by regressing `Y` on all of the `X`'s except `Xj` to form `e_Y` and then regressing `Xj` on all of the other X's to form `e_X`.  Confirm that the slope in a manually constructed added variable plot for one of the predictors  in Ex. 10 is the same as the estimate from your model. 
